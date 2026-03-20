@@ -2,13 +2,11 @@ import * as os from 'os'
 import * as path from 'path'
 import * as pathHelper from './internal-path-helper.js'
 import assert from 'assert'
-import minimatch from 'minimatch'
+import {Minimatch, type MinimatchOptions} from 'minimatch'
 import {MatchKind} from './internal-match-kind.js'
 import {Path} from './internal-path.js'
 
-type IMinimatch = minimatch.IMinimatch
-type IMinimatchOptions = minimatch.IOptions
-const {Minimatch} = minimatch
+type IMinimatch = Minimatch
 
 const IS_WINDOWS = process.platform === 'win32'
 
@@ -126,7 +124,7 @@ export class Pattern {
     this.isImplicitPattern = isImplicitPattern
 
     // Create minimatch
-    const minimatchOptions: IMinimatchOptions = {
+    const minimatchOptions: MinimatchOptions = {
       dot: true,
       nobrace: true,
       nocase: IS_WINDOWS,
@@ -134,8 +132,21 @@ export class Pattern {
       noext: true,
       nonegate: true
     }
-    pattern = IS_WINDOWS ? pattern.replace(/\\/g, '/') : pattern
-    this.minimatch = new Minimatch(pattern, minimatchOptions)
+    // Build the minimatch pattern by replacing literal segments with their actual
+    // literal values. This ensures compatibility with minimatch v10, which changed
+    // how some bracket expressions (e.g. [!]) are interpreted.
+    const resolvedSegments = this.segments.map(seg => {
+      const literal = Pattern.getLiteral(seg)
+      return literal !== '' ? Pattern.globEscape(literal) : seg
+    })
+    const root = resolvedSegments[0].replace(/\\/g, '/')
+    const rest = resolvedSegments.slice(1).join('/')
+    const minimatchPattern = rest
+      ? root.endsWith('/')
+        ? `${root}${rest}`
+        : `${root}/${rest}`
+      : root
+    this.minimatch = new Minimatch(minimatchPattern, minimatchOptions)
   }
 
   /**
